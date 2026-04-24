@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRT Diff</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f11;
+    --bg2: #17171a;
+    --bg3: #1e1e22;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8e8ec;
+    --muted: #6b6b78;
+    --accent: #7c6af7;
+    --add-bg: rgba(52,199,100,0.10);
+    --add-border: rgba(52,199,100,0.35);
+    --add-text: #34c764;
+    --del-bg: rgba(255,69,58,0.10);
+    --del-border: rgba(255,69,58,0.35);
+    --del-text: #ff4d4d;
+    --mod-bg: rgba(255,179,0,0.08);
+    --mod-border: rgba(255,179,0,0.3);
+    --mod-text: #ffb300;
+    --ts-color: #7c6af7;
+  }
+
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--text);
+  }
+
+  header span {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .badge-add { background: var(--add-bg); color: var(--add-text); border: 1px solid var(--add-border); }
+  .badge-del { background: var(--del-bg); color: var(--del-text); border: 1px solid var(--del-border); }
+  .badge-mod { background: var(--mod-bg); color: var(--mod-text); border: 1px solid var(--mod-border); }
+
+  .upload-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    border-bottom: 1px solid var(--border);
+    background: var(--border);
+  }
+
+  .upload-pane {
+    background: var(--bg);
+    padding: 20px 24px;
+  }
+
+  .pane-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .drop-zone {
+    border: 1px dashed var(--border2);
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    margin-bottom: 10px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(124,106,247,0.06);
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-zone-text { font-size: 12px; color: var(--muted); pointer-events: none; }
+  .drop-zone-text strong { color: var(--accent); }
+  .filename { font-size: 12px; color: var(--add-text); margin-top: 4px; }
+
+  textarea {
+    width: 100%;
+    height: 90px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 10px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+    line-height: 1.5;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); }
+
+  .actions {
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  button:active { transform: scale(0.97); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { opacity: 0.88; }
+
+  .btn-ghost {
+    background: var(--bg3);
+    color: var(--muted);
+    border: 1px solid var(--border2);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--border2); }
+
+  .stats {
+    margin-left: auto;
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    align-items: center;
+  }
+  .stat-item { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+  .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  .filter-bar {
+    padding: 10px 24px;
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .filter-bar span { font-size: 11px; color: var(--muted); margin-right: 4px; }
+  .filter-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    font-weight: 400;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+  }
+  .filter-btn.active { background: var(--bg3); color: var(--text); border-color: var(--border2); }
+  .filter-btn.active.f-add { color: var(--add-text); border-color: var(--add-border); background: var(--add-bg); }
+  .filter-btn.active.f-del { color: var(--del-text); border-color: var(--del-border); background: var(--del-bg); }
+  .filter-btn.active.f-mod { color: var(--mod-text); border-color: var(--mod-border); background: var(--mod-bg); }
+
+  .diff-container {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .diff-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .diff-header-cell {
+    background: var(--bg2);
+    padding: 8px 24px;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    transition: background 0.1s;
+  }
+  .diff-row:hover { background: var(--border2); }
+
+  .diff-cell {
+    background: var(--bg);
+    padding: 12px 24px;
+    position: relative;
+  }
+
+  .diff-cell.cell-add { border-left: 2px solid var(--add-border); }
+  .diff-cell.cell-del { border-left: 2px solid var(--del-border); }
+  .diff-cell.cell-mod { border-left: 2px solid var(--mod-border); }
+  .diff-cell.cell-empty { background: var(--bg2); }
+
+  .cell-index {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+
+  .cell-ts {
+    font-size: 11px;
+    color: var(--ts-color);
+    margin-bottom: 5px;
+    letter-spacing: 0.01em;
+  }
+  .cell-ts.ts-changed { color: var(--mod-text); }
+
+  .cell-text {
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    color: var(--text);
+  }
+
+  mark.diff-ins {
+    background: rgba(52,199,100,0.25);
+    color: var(--add-text);
+    border-radius: 2px;
+    padding: 0 1px;
+    font-weight: 600;
+  }
+  mark.diff-del {
+    background: rgba(255,69,58,0.2);
+    color: var(--del-text);
+    text-decoration: line-through;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 60px;
+  }
+  .empty-icon { font-size: 32px; opacity: 0.4; font-family: sans-serif; }
+
+  .toggle-same {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+  }
+  .toggle-same input { cursor: pointer; accent-color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SRT Diff</h1>
+  <span>字幕文件对比工具</span>
+</header>
+
+<div class="upload-area">
+  <div class="upload-pane">
+    <div class="pane-label">版本 A（原版）</div>
+    <div class="drop-zone" id="dropA">
+      <input type="file" accept=".srt,.txt" id="fileA">
+      <div class="drop-zone-text">
+        <strong>点击上传</strong> 或拖放 .srt 文件<br>
+      </div>
+    </div>
+    <div class="filename" id="fnameA"></div>
+    <textarea id="textA" placeholder="或直接粘贴 SRT 内容...&#10;&#10;1&#10;00:00:01,000 --> 00:00:03,000&#10;字幕文本"></textarea>
+  </div>
+  <div class="upload-pane">
+    <div class="pane-label">版本 B（修改版）</div>
+    <div class="drop-zone" id="dropB">
+      <input type="file" accept=".srt,.txt" id="fileB">
+      <div class="drop-zone-text">
+        <strong>点击上传</strong> 或拖放 .srt 文件<br>
+      </div>
+    </div>
+    <div class="filename" id="fnameB"></div>
+    <textarea id="textB" placeholder="或直接粘贴 SRT 内容...&#10;&#10;1&#10;00:00:01,000 --> 00:00:03,000&#10;字幕文本"></textarea>
+  </div>
+</div>
+
+<div class="actions">
+  <button class="btn-primary" onclick="runDiff()">▶ 对比</button>
+  <button class="btn-ghost" onclick="clearAll()">清空</button>
+  <div class="stats" id="statsBar" style="display:none">
+    <div class="stat-item"><div class="stat-dot" style="background:var(--add-text)"></div><span id="statAdd">0 新增</span></div>
+    <div class="stat-item"><div class="stat-dot" style="background:var(--del-text)"></div><span id="statDel">0 删除</span></div>
+    <div class="stat-item"><div class="stat-dot" style="background:var(--mod-text)"></div><span id="statMod">0 修改</span></div>
+    <div class="stat-item"><div class="stat-dot" style="background:var(--muted)"></div><span id="statSame">0 相同</span></div>
+  </div>
+</div>
+
+<div id="diffOutput" class="diff-container">
+  <div class="empty-state">
+    <div class="empty-icon">⇌</div>
+    <span>上传或粘贴两个 SRT 文件，然后点击对比</span>
+  </div>
+</div>
+
+<script>
+function parseSRT(text) {
+  const blocks = [];
+  const raw = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const parts = raw.split(/\n\s*\n/);
+  for (const part of parts) {
+    const lines = part.trim().split('\n');
+    if (lines.length < 2) continue;
+    const idx = parseInt(lines[0].trim());
+    if (isNaN(idx)) continue;
+    const tsLine = lines[1].trim();
+    const tsMatch = tsLine.match(/^(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})/);
+    if (!tsMatch) continue;
+    const textContent = lines.slice(2).join('\n').trim();
+    blocks.push({ idx, ts: tsLine, tsStart: tsMatch[1], tsEnd: tsMatch[2], text: textContent });
+  }
+  return blocks;
+}
+
+function wordDiff(a, b) {
+  const wa = a.split(/(\s+)/);
+  const wb = b.split(/(\s+)/);
+  const m = wa.length, n = wb.length;
+  const dp = Array.from({length: m+1}, () => new Array(n+1).fill(0));
+  for (let i = m-1; i >= 0; i--)
+    for (let j = n-1; j >= 0; j--)
+      dp[i][j] = wa[i] === wb[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  let i=0, j=0, resA='', resB='';
+  while (i<m || j<n) {
+    if (i<m && j<n && wa[i]===wb[j]) {
+      const esc = escHtml(wa[i]);
+      resA += esc; resB += esc; i++; j++;
+    } else if (j<n && (i>=m || dp[i][j+1]>=dp[i+1][j])) {
+      resB += '<mark class="diff-ins">'+escHtml(wb[j])+'</mark>'; j++;
+    } else {
+      resA += '<mark class="diff-del">'+escHtml(wa[i])+'</mark>'; i++;
+    }
+  }
+  return [resA, resB];
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+let diffRows = [];
+
+function runDiff() {
+  const rawA = document.getElementById('textA').value.trim();
+  const rawB = document.getElementById('textB').value.trim();
+  if (!rawA && !rawB) { alert('请先输入或上传两个 SRT 文件'); return; }
+
+  const blocksA = parseSRT(rawA || '');
+  const blocksB = parseSRT(rawB || '');
+  const mapA = new Map(blocksA.map(b => [b.idx, b]));
+  const mapB = new Map(blocksB.map(b => [b.idx, b]));
+  const allIdx = [...new Set([...mapA.keys(), ...mapB.keys()])].sort((a,b)=>a-b);
+
+  let addC=0, delC=0, modC=0, sameC=0;
+  diffRows = [];
+
+  for (const idx of allIdx) {
+    const a = mapA.get(idx), b = mapB.get(idx);
+    if (!a && b) {
+      diffRows.push({ type:'add', idx, a:null, b });
+      addC++;
+    } else if (a && !b) {
+      diffRows.push({ type:'del', idx, a, b:null });
+      delC++;
+    } else {
+      const tsChanged = a.ts !== b.ts;
+      const textChanged = a.text !== b.text;
+      if (!tsChanged && !textChanged) {
+        diffRows.push({ type:'same', idx, a, b });
+        sameC++;
+      } else {
+        diffRows.push({ type:'mod', idx, a, b, tsChanged, textChanged });
+        modC++;
+      }
+    }
+  }
+
+  document.getElementById('statAdd').textContent = addC + ' 新增';
+  document.getElementById('statDel').textContent = delC + ' 删除';
+  document.getElementById('statMod').textContent = modC + ' 修改';
+  document.getElementById('statSame').textContent = sameC + ' 相同';
+  document.getElementById('statsBar').style.display = 'flex';
+
+  renderDiff();
+}
+
+function renderDiff() {
+  const out = document.getElementById('diffOutput');
+
+  if (diffRows.length === 0) {
+    out.innerHTML = '<div class="empty-state"><div class="empty-icon">⇌</div><span>上传或粘贴两个 SRT 文件，然后点击对比</span></div>';
+    return;
+  }
+
+  let html = '<div class="diff-header"><div class="diff-header-cell">版本 A（原版）</div><div class="diff-header-cell">版本 B（修改版）</div></div>';
+  for (const row of diffRows) html += buildRow(row);
+  out.innerHTML = html;
+}
+
+function buildRow(row) {
+  const {type, idx, a, b} = row;
+
+  if (type === 'same') {
+    return `<div class="diff-row same">
+      ${cellHtml(a, '')}
+      ${cellHtml(b, '')}
+    </div>`;
+  }
+  if (type === 'add') {
+    return `<div class="diff-row">
+      <div class="diff-cell cell-empty"></div>
+      <div class="diff-cell cell-add">
+        <div class="cell-index">#${b.idx}</div>
+        <div class="cell-ts"><mark class="diff-ins">${escHtml(b.ts)}</mark></div>
+        <div class="cell-text"><mark class="diff-ins">${escHtml(b.text)}</mark></div>
+      </div>
+    </div>`;
+  }
+  if (type === 'del') {
+    return `<div class="diff-row">
+      <div class="diff-cell cell-del">
+        <div class="cell-index">#${a.idx}</div>
+        <div class="cell-ts"><mark class="diff-del">${escHtml(a.ts)}</mark></div>
+        <div class="cell-text"><mark class="diff-del">${escHtml(a.text)}</mark></div>
+      </div>
+      <div class="diff-cell cell-empty"></div>
+    </div>`;
+  }
+  if (type === 'mod') {
+    const {tsChanged, textChanged} = row;
+    let textA = escHtml(a.text), textB = escHtml(b.text);
+    if (textChanged) [textA, textB] = wordDiff(a.text, b.text);
+    let tsA = escHtml(a.ts), tsB = escHtml(b.ts);
+    if (tsChanged) [tsA, tsB] = wordDiff(a.ts, b.ts);
+    return `<div class="diff-row">
+      <div class="diff-cell cell-mod">
+        <div class="cell-index">#${a.idx}</div>
+        <div class="cell-ts">${tsA}</div>
+        <div class="cell-text">${textA}</div>
+      </div>
+      <div class="diff-cell cell-mod">
+        <div class="cell-index">#${b.idx}</div>
+        <div class="cell-ts">${tsB}</div>
+        <div class="cell-text">${textB}</div>
+      </div>
+    </div>`;
+  }
+  return '';
+}
+
+function cellHtml(block, cls) {
+  if (!block) return `<div class="diff-cell cell-empty"></div>`;
+  return `<div class="diff-cell ${cls}">
+    <div class="cell-index">#${block.idx}</div>
+    <div class="cell-ts">${escHtml(block.ts)}</div>
+    <div class="cell-text">${escHtml(block.text)}</div>
+  </div>`;
+}
+
+function clearAll() {
+  document.getElementById('textA').value = '';
+  document.getElementById('textB').value = '';
+  document.getElementById('fnameA').textContent = '';
+  document.getElementById('fnameB').textContent = '';
+  document.getElementById('statsBar').style.display = 'none';
+  diffRows = [];
+  document.getElementById('diffOutput').innerHTML = '<div class="empty-state"><div class="empty-icon">⇌</div><span>上传或粘贴两个 SRT 文件，然后点击对比</span></div>';
+}
+
+function setupFileDrop(dropId, fileId, textId, fnameId) {
+  const drop = document.getElementById(dropId);
+  const file = document.getElementById(fileId);
+  const fname = document.getElementById(fnameId);
+  file.addEventListener('change', () => {
+    const f = file.files[0];
+    if (!f) return;
+    fname.textContent = '📄 ' + f.name;
+    f.text().then(t => { document.getElementById(textId).value = t; });
+  });
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    fname.textContent = '📄 ' + f.name;
+    f.text().then(t => { document.getElementById(textId).value = t; });
+  });
+}
+
+setupFileDrop('dropA','fileA','textA','fnameA');
+setupFileDrop('dropB','fileB','textB','fnameB');
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='Enter') runDiff();
+});
+</script>
+</body>
+</html>
