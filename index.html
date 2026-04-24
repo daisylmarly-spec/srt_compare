@@ -371,11 +371,12 @@ function parseSRT(text) {
     if (lines.length < 2) continue;
     const idx = parseInt(lines[0].trim());
     if (isNaN(idx)) continue;
+    // 宽松匹配：只要有 --> 就认定为时间轴行
     const tsLine = lines[1].trim();
-    const tsMatch = tsLine.match(/^(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})/);
-    if (!tsMatch) continue;
+    if (!tsLine.includes('-->')) continue;
+    const [tsStart, tsEnd] = tsLine.split('-->').map(s => s.trim());
     const textContent = lines.slice(2).join('\n').trim();
-    blocks.push({ idx, ts: tsLine, tsStart: tsMatch[1], tsEnd: tsMatch[2], text: textContent });
+    blocks.push({ idx, ts: tsLine, tsStart, tsEnd, text: textContent });
   }
   return blocks;
 }
@@ -405,13 +406,14 @@ function alignBlocks(blocksA, blocksB) {
   const dp = Array.from({length: m+1}, () => new Int32Array(n+1));
   for (let i = m-1; i >= 0; i--)
     for (let j = n-1; j >= 0; j--)
-      dp[i][j] = blocksA[i].text === blocksB[j].text && blocksA[i].ts === blocksB[j].ts
+      dp[i][j] = blocksA[i].text === blocksB[j].text
         ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
   const pairs = [];
   let i=0, j=0;
   while (i<m || j<n) {
-    if (i<m && j<n && blocksA[i].text===blocksB[j].text && blocksA[i].ts===blocksB[j].ts) {
-      pairs.push({ type:'same', a:blocksA[i], b:blocksB[j] }); i++; j++;
+    if (i<m && j<n && blocksA[i].text===blocksB[j].text) {
+      const t = blocksA[i].ts===blocksB[j].ts ? 'same' : 'mod';
+      pairs.push({ type:t, a:blocksA[i], b:blocksB[j] }); i++; j++;
     } else if (i<m && (j>=n || dp[i+1][j] >= dp[i][j+1])) {
       pairs.push({ type:'del', a:blocksA[i], b:null }); i++;
     } else {
