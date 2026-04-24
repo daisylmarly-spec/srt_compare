@@ -402,33 +402,21 @@ function charDiff(a, b) {
 }
 
 function alignBlocks(blocksA, blocksB) {
-  const m = blocksA.length, n = blocksB.length;
-  const dp = Array.from({length: m+1}, () => new Int32Array(n+1));
-  for (let i = m-1; i >= 0; i--)
-    for (let j = n-1; j >= 0; j--)
-      dp[i][j] = blocksA[i].text === blocksB[j].text
-        ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  // 优先按序号对齐
+  const mapA = new Map(blocksA.map(b => [b.idx, b]));
+  const mapB = new Map(blocksB.map(b => [b.idx, b]));
+  const allIdx = [...new Set([...mapA.keys(), ...mapB.keys()])].sort((a,b)=>a-b);
   const pairs = [];
-  let i=0, j=0;
-  while (i<m || j<n) {
-    if (i<m && j<n && blocksA[i].text===blocksB[j].text) {
-      const t = blocksA[i].ts===blocksB[j].ts ? 'same' : 'mod';
-      pairs.push({ type:t, a:blocksA[i], b:blocksB[j] }); i++; j++;
-    } else if (i<m && (j>=n || dp[i+1][j] >= dp[i][j+1])) {
-      pairs.push({ type:'del', a:blocksA[i], b:null }); i++;
-    } else {
-      pairs.push({ type:'add', a:null, b:blocksB[j] }); j++;
+  for (const idx of allIdx) {
+    const a = mapA.get(idx), b = mapB.get(idx);
+    if (!a) { pairs.push({ type:'add', a:null, b }); }
+    else if (!b) { pairs.push({ type:'del', a, b:null }); }
+    else {
+      const same = a.text === b.text && a.ts === b.ts;
+      pairs.push({ type: same ? 'same' : 'mod', a, b });
     }
   }
-  const merged = [];
-  for (let k=0; k<pairs.length; k++) {
-    if (pairs[k].type==='del' && k+1<pairs.length && pairs[k+1].type==='add') {
-      merged.push({ type:'mod', a:pairs[k].a, b:pairs[k+1].b }); k++;
-    } else {
-      merged.push(pairs[k]);
-    }
-  }
-  return merged;
+  return pairs;
 }
 
 function escHtml(s) {
