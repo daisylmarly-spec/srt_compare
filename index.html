@@ -380,26 +380,53 @@ function parseSRT(text) {
   return blocks;
 }
 
-function wordDiff(a, b) {
-  const wa = a.split(/(\s+)/);
-  const wb = b.split(/(\s+)/);
-  const m = wa.length, n = wb.length;
-  const dp = Array.from({length: m+1}, () => new Array(n+1).fill(0));
+function charDiff(a, b) {
+  const ca = [...a], cb = [...b];
+  const m = ca.length, n = cb.length;
+  const dp = Array.from({length: m+1}, () => new Int32Array(n+1));
   for (let i = m-1; i >= 0; i--)
     for (let j = n-1; j >= 0; j--)
-      dp[i][j] = wa[i] === wb[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+      dp[i][j] = ca[i] === cb[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
   let i=0, j=0, resA='', resB='';
   while (i<m || j<n) {
-    if (i<m && j<n && wa[i]===wb[j]) {
-      const esc = escHtml(wa[i]);
-      resA += esc; resB += esc; i++; j++;
+    if (i<m && j<n && ca[i]===cb[j]) {
+      resA += escHtml(ca[i]); resB += escHtml(cb[j]); i++; j++;
     } else if (j<n && (i>=m || dp[i][j+1]>=dp[i+1][j])) {
-      resB += '<mark class="diff-ins">'+escHtml(wb[j])+'</mark>'; j++;
+      resB += '<mark class="diff-ins">'+escHtml(cb[j])+'</mark>'; j++;
     } else {
-      resA += '<mark class="diff-del">'+escHtml(wa[i])+'</mark>'; i++;
+      resA += '<mark class="diff-del">'+escHtml(ca[i])+'</mark>'; i++;
     }
   }
   return [resA, resB];
+}
+
+function alignBlocks(blocksA, blocksB) {
+  const m = blocksA.length, n = blocksB.length;
+  const dp = Array.from({length: m+1}, () => new Int32Array(n+1));
+  for (let i = m-1; i >= 0; i--)
+    for (let j = n-1; j >= 0; j--)
+      dp[i][j] = blocksA[i].text === blocksB[j].text && blocksA[i].ts === blocksB[j].ts
+        ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+  const pairs = [];
+  let i=0, j=0;
+  while (i<m || j<n) {
+    if (i<m && j<n && blocksA[i].text===blocksB[j].text && blocksA[i].ts===blocksB[j].ts) {
+      pairs.push({ type:'same', a:blocksA[i], b:blocksB[j] }); i++; j++;
+    } else if (i<m && (j>=n || dp[i+1][j] >= dp[i][j+1])) {
+      pairs.push({ type:'del', a:blocksA[i], b:null }); i++;
+    } else {
+      pairs.push({ type:'add', a:null, b:blocksB[j] }); j++;
+    }
+  }
+  const merged = [];
+  for (let k=0; k<pairs.length; k++) {
+    if (pairs[k].type==='del' && k+1<pairs.length && pairs[k+1].type==='add') {
+      merged.push({ type:'mod', a:pairs[k].a, b:pairs[k+1].b }); k++;
+    } else {
+      merged.push(pairs[k]);
+    }
+  }
+  return merged;
 }
 
 function escHtml(s) {
@@ -415,32 +442,14 @@ function runDiff() {
 
   const blocksA = parseSRT(rawA || '');
   const blocksB = parseSRT(rawB || '');
-  const mapA = new Map(blocksA.map(b => [b.idx, b]));
-  const mapB = new Map(blocksB.map(b => [b.idx, b]));
-  const allIdx = [...new Set([...mapA.keys(), ...mapB.keys()])].sort((a,b)=>a-b);
 
   let addC=0, delC=0, modC=0, sameC=0;
-  diffRows = [];
-
-  for (const idx of allIdx) {
-    const a = mapA.get(idx), b = mapB.get(idx);
-    if (!a && b) {
-      diffRows.push({ type:'add', idx, a:null, b });
-      addC++;
-    } else if (a && !b) {
-      diffRows.push({ type:'del', idx, a, b:null });
-      delC++;
-    } else {
-      const tsChanged = a.ts !== b.ts;
-      const textChanged = a.text !== b.text;
-      if (!tsChanged && !textChanged) {
-        diffRows.push({ type:'same', idx, a, b });
-        sameC++;
-      } else {
-        diffRows.push({ type:'mod', idx, a, b, tsChanged, textChanged });
-        modC++;
-      }
-    }
+  diffRows = alignBlocks(blocksA, blocksB);
+  for (const r of diffRows) {
+    if (r.type==='add') addC++;
+    else if (r.type==='del') delC++;
+    else if (r.type==='mod') modC++;
+    else sameC++;
   }
 
   document.getElementById('statAdd').textContent = addC + ' 新增';
@@ -495,11 +504,8 @@ function buildRow(row) {
     </div>`;
   }
   if (type === 'mod') {
-    const {tsChanged, textChanged} = row;
-    let textA = escHtml(a.text), textB = escHtml(b.text);
-    if (textChanged) [textA, textB] = wordDiff(a.text, b.text);
-    let tsA = escHtml(a.ts), tsB = escHtml(b.ts);
-    if (tsChanged) [tsA, tsB] = wordDiff(a.ts, b.ts);
+    let [textA, textB] = a.text === b.text ? [escHtml(a.text), escHtml(b.text)] : charDiff(a.text, b.text);
+    let [tsA, tsB] = a.ts === b.ts ? [escHtml(a.ts), escHtml(b.ts)] : charDiff(a.ts, b.ts);
     return `<div class="diff-row">
       <div class="diff-cell cell-mod">
         <div class="cell-index">#${a.idx}</div>
