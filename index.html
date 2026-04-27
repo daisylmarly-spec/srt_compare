@@ -364,19 +364,28 @@
 <script>
 function parseSRT(text) {
   const blocks = [];
-  const raw = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const parts = raw.split(/\n\s*\n/);
-  for (const part of parts) {
-    const lines = part.trim().split('\n');
-    if (lines.length < 2) continue;
-    const idx = parseInt(lines[0].trim());
-    if (isNaN(idx)) continue;
-    // 宽松匹配：只要有 --> 就认定为时间轴行
-    const tsLine = lines[1].trim();
-    if (!tsLine.includes('-->')) continue;
-    const [tsStart, tsEnd] = tsLine.split('-->').map(s => s.trim());
-    const textContent = lines.slice(2).join('\n').trim();
-    blocks.push({ idx, ts: tsLine, tsStart, tsEnd, text: textContent });
+  const allLines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  let i = 0;
+  while (i < allLines.length) {
+    const line = allLines[i].trim();
+    const idx = parseInt(line);
+    if (!isNaN(idx) && String(idx) === line) {
+      i++;
+      if (i >= allLines.length) break;
+      const tsLine = allLines[i].trim();
+      if (tsLine.includes('-->')) {
+        i++;
+        const textLines = [];
+        while (i < allLines.length && allLines[i].trim() !== '') {
+          textLines.push(allLines[i]);
+          i++;
+        }
+        const [tsStart, tsEnd] = tsLine.split('-->').map(s => s.trim());
+        blocks.push({ idx, ts: tsLine, tsStart, tsEnd, text: textLines.join('\n').trim() });
+      }
+    } else {
+      i++;
+    }
   }
   return blocks;
 }
